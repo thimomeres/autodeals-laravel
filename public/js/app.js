@@ -12,6 +12,14 @@ document.addEventListener("DOMContentLoaded", () => {
     currentPath.includes("vehicle")
   ) {
     activePage = "infentory"; 
+  } else if (currentPath.includes("sales")) {
+    activePage = "sales";
+  } else if (currentPath.includes("/admin/users")) {
+    activePage = "users";
+  } else if (currentPath.includes("/admin/activity")) {
+    activePage = "activity";
+  } else if (currentPath.includes("/profile")) {
+    activePage = "profile";
   } else if (currentPath.includes("dashboard")) {
     activePage = "dashboard";
   }

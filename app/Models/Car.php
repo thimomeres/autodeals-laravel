@@ -10,11 +10,7 @@ class Car extends Model
 {
     use HasFactory;
 
-    // Memastikan Laravel menembak tabel 'cars' di MySQL
     protected $table = 'cars'; 
-
-    // Mengizinkan semua kolom diisi secara massal (kecuali ID)
-    // SANGAT COCOK karena kolom Anda banyak, jadi tidak perlu ngetik satu-persatu lagi.
     protected $guarded = ['id'];
 
     // Relasi: Satu mobil punya banyak gambar
@@ -23,7 +19,13 @@ class Car extends Model
         return $this->hasMany(CarImage::class, 'car_id');
     }
 
-    // Relasi: Satu mobil punya banyak penawaran (inquiries)
+    // ✨ Sinkronisasi Relasi ke Tabel Offers
+    public function offers(): HasMany
+    {
+        return $this->hasMany(Offer::class, 'car_id');
+    }
+
+    // Tetap pertahankan ini jika Anda juga memiliki tabel inquiry terpisah
     public function inquiries(): HasMany
     {
         return $this->hasMany(Inquiry::class, 'car_id');

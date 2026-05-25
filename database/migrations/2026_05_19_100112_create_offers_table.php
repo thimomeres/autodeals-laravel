@@ -18,7 +18,7 @@ return new class extends Migration
         $table->string('buyer_name');
         $table->decimal('price_offered', 15, 2);
         // Status awal otomatis 'pending_review'
-        $table->enum('status', ['pending_review', 'approved', 'rejected'])->default('pending_review');
+        $table->enum('status', ['pending_review', 'accepted', 'rejected'])->default('pending_review');
         $table->timestamps();
     });
 }

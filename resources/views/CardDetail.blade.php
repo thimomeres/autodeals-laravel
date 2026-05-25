@@ -43,23 +43,24 @@
                 <i data-lucide="edit" class="w-4 h-4"></i> Edit Unit
                 </button>
 
-                <form 
-                action="{{ route('Car.destroy', $car->id) }}" 
-                method="POST" 
-                onsubmit="return confirm('Are you sure you want to delete this vehicle from the system? This action cannot be undone.');"
-                class="inline-block"
+                @if(auth()->user()->isOwner())
+                <form
+                  action="{{ route('Car.destroy', $car->id) }}"
+                  method="POST"
+                  onsubmit="return confirm('Are you sure you want to delete this vehicle from the system? This action cannot be undone.');"
+                  class="inline-block"
                 >
                   @csrf
                   @method('DELETE')
-                  
                   <button
-                      type="submit"
-                      class="px-5 h-11 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold flex items-center gap-2 transition text-sm cursor-pointer shadow-sm"
-                      title="Delete Vehicle"
+                    type="submit"
+                    class="px-5 h-11 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-semibold flex items-center gap-2 transition text-sm cursor-pointer shadow-sm"
+                    title="Delete Vehicle"
                   >
-                      <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
+                    <i data-lucide="trash-2" class="w-4 h-4"></i> Delete
                   </button>
                 </form>
+                @endif
             </div>
          </header>
        
@@ -233,14 +234,21 @@
                   </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                  @forelse($car->inquiries as $inquiry)
+                  @forelse($car->offers as $offer)
                     <tr class="hover:bg-gray-50/60 transition">
-                      <td class="p-4 font-bold text-gray-950">{{ $inquiry->buyer_name }}</td>
-                      <td class="p-4 text-gray-500">{{ $inquiry->created_at->format('M d, Y') }}</td>
-                      <td class="p-4 font-bold text-gray-900">Rp {{ number_format($inquiry->price_offered, 0, ',', '.') }}</td>
+                      <td class="p-4 font-bold text-gray-950">{{ $offer->buyer_name }}</td>
+                      <td class="p-4 text-gray-500">{{ $offer->created_at->format('M d, Y') }}</td>
+                      <td class="p-4 font-bold text-gray-900">Rp {{ number_format($offer->price_offered, 0, ',', '.') }}</td>
                       <td class="p-4">
-                        <span class="px-3 py-1 rounded-full text-xs font-semibold {{ $inquiry->status == 'Approved' ? 'bg-green-50 text-green-600' : 'bg-rose-50 text-rose-600' }}">
-                          {{ $inquiry->status }}
+                        @php
+                          $statusClass = match($offer->status) {
+                            'accepted' => 'bg-green-50 text-green-600',
+                            'rejected' => 'bg-rose-50 text-rose-600',
+                            default => 'bg-amber-50 text-amber-600',
+                          };
+                        @endphp
+                        <span class="px-3 py-1 rounded-full text-xs font-semibold capitalize {{ $statusClass }}">
+                          {{ str_replace('_', ' ', $offer->status) }}
                         </span>
                       </td>
                     </tr>

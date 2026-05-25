@@ -46,30 +46,37 @@
       </header>
 
       <section class="p-8">
-        <div class="grid grid-cols-5 gap-6 mb-8">
-          <div class="bg-white border border-gray-200 rounded-3xl p-6">
-            <p class="text-gray-500 text-sm mb-3">Total Cars</p>
-            <h3 class="text-4xl font-bold">{{ $cars->count() }}</h3>
+        
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
+          <div class="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
+            <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Total Cars</p>
+            <h3 class="text-3xl font-black text-gray-900">{{ $cars->count() }}</h3>
           </div>
 
-          <div class="bg-white border border-gray-200 rounded-3xl p-6">
-            <p class="text-gray-500 text-sm mb-3">Available</p>
-            <h3 class="text-4xl font-bold text-green-600">{{ $cars->where('status', 'available')->count() }}</h3>
+          <div class="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
+            <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Available</p>
+            <h3 class="text-3xl font-black text-green-600">
+              {{ $cars->filter(fn($c) => strtolower($c->status) === 'available')->count() }}
+            </h3>
           </div>
 
-          <div class="bg-white border border-gray-200 rounded-3xl p-6">
-            <p class="text-gray-500 text-sm mb-3">Pending</p>
-            <h3 class="text-4xl font-bold text-yellow-500">{{ $cars->where('status', 'pending')->count() }}</h3>
+          <div class="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
+            <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Pending</p>
+            <h3 class="text-3xl font-black text-amber-500">
+              {{ $cars->filter(fn($c) => strtolower($c->status) === 'pending')->count() }}
+            </h3>
           </div>
 
-          <div class="bg-white border border-gray-200 rounded-3xl p-6">
-            <p class="text-gray-500 text-sm mb-3">Sold Units</p>
-            <h3 class="text-4xl font-bold text-blue-600">{{ $cars->where('status', 'sold')->count() }}</h3>
+          <div class="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
+            <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Sold Units</p>
+            <h3 class="text-3xl font-black text-blue-600">
+              {{ $cars->filter(fn($c) => strtolower($c->status) === 'sold')->count() }}
+            </h3>
           </div>
 
-          <div class="bg-white border border-gray-200 rounded-3xl p-6">
-            <p class="text-gray-500 text-sm mb-3">Total Stock Value</p>
-            <h3 class="text-2xl font-bold text-gray-900">Rp {{ number_format($cars->sum('price'), 0, ',', '.') }}</h3>
+          <div class="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
+            <p class="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Total Stock Value</p>
+            <h3 class="text-xl font-black text-gray-900 truncate">Rp {{ number_format($cars->sum('price'), 0, ',', '.') }}</h3>
           </div>
         </div>
 
@@ -78,12 +85,12 @@
             type="text"
             id="searchVehicle"
             placeholder="Search vehicle by brand or model..."
-            class="flex-1 h-14 rounded-2xl border border-gray-200 px-5 bg-white outline-none"
+            class="flex-1 h-14 rounded-2xl border border-gray-200 px-5 bg-white outline-none text-sm font-medium shadow-sm transition focus:border-blue-500"
           />
 
           <select
             id="filterBrand"
-            class="h-14 px-5 rounded-2xl border border-gray-200 bg-white outline-none cursor-pointer"
+            class="h-14 px-5 rounded-2xl border border-gray-200 bg-white outline-none cursor-pointer text-sm font-semibold shadow-sm text-gray-700"
           >
             <option value="all">All Brands</option>
             <option value="toyota">Toyota</option>
@@ -95,41 +102,39 @@
           </select>
         </div>
 
-        <div class="bg-white border border-gray-200 rounded-3xl overflow-hidden">
-          <table class="w-full">
+        <div class="bg-white border border-gray-200 rounded-3xl overflow-hidden shadow-sm">
+          <table class="w-full text-sm">
             <thead class="bg-gray-50 border-b border-gray-200">
               <tr>
-                <th class="text-left p-6 text-sm text-gray-500">Car</th>
-                <th class="text-left p-6 text-sm text-gray-500">Year</th>
-                <th class="text-left p-6 text-sm text-gray-500">Transmission</th>
-                <th class="text-left p-6 text-sm text-gray-500">Mileage</th>
-                <th class="text-left p-6 text-sm text-gray-500">Price</th>
-                <th class="text-left p-6 text-sm text-gray-500">Status</th>
-                <th class="text-right p-6 text-sm text-gray-500">Action</th>
+                <th class="text-left p-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Car</th>
+                <th class="text-left p-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Year</th>
+                <th class="text-left p-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Transmission</th>
+                <th class="text-left p-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Mileage</th>
+                <th class="text-left p-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Price</th>
+                <th class="text-left p-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
+                <th class="text-right p-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Action</th>
               </tr>
             </thead>
 
-            <tbody id="vehicleTableBody">
+            <tbody id="vehicleTableBody" class="divide-y divide-gray-100">
               @forelse($cars as $car)
-              <tr class="vehicle-item border-b border-gray-100 hover:bg-gray-50 transition" data-brand="{{ strtolower($car->brand) }}">
-                <td class="p-6">
-                  <div class="flex items-center gap-3">
+              <tr class="vehicle-item hover:bg-gray-50/60 transition" data-brand="{{ strtolower(trim($car->brand)) }}">
+                <td class="p-5">
+                  <div class="flex items-center gap-4">
                     @if($car->images->isNotEmpty())
                       <img
                         src="{{ asset('storage/' . $car->images->first()->image_path) }}"
-                        class="w-20 h-14 object-cover rounded-xl shrink-0 border border-gray-100"
+                        class="w-20 h-14 object-cover rounded-xl shrink-0 border border-gray-100 shadow-sm"
                         alt="{{ $car->model }}"
                       />
                     @else
-                      <img
-                        src="{{ asset('images/default-car.jpg') }}"
-                        class="w-20 h-14 object-cover rounded-xl shrink-0 bg-gray-100"
-                        alt="No Image"
-                      />
+                      <div class="w-20 h-14 rounded-xl shrink-0 bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400">
+                        <i data-lucide="image" class="w-5 h-5"></i>
+                      </div>
                     @endif
 
-                    <div class="flex flex-col gap-1 min-w-0">
-                      <h4 class="font-bold text-gray-950 truncate vehicle-name">
+                    <div class="flex flex-col gap-0.5 min-w-0">
+                      <h4 class="font-bold text-gray-950 truncate vehicle-name text-base">
                         {{ $car->brand }} {{ $car->model }}
                       </h4>
                       <p class="text-xs font-mono text-gray-400 tracking-wider">
@@ -139,12 +144,12 @@
                   </div>
                 </td>
 
-                <td class="p-6 text-gray-700">{{ $car->year }}</td>
-                <td class="p-6 text-gray-700">{{ $car->transmission }}</td>
-                <td class="p-6 text-gray-700">{{ number_format($car->mileage, 0, ',', '.') }} km</td>
-                <td class="p-6 font-bold text-gray-950">Rp {{ number_format($car->price, 0, ',', '.') }}</td>
+                <td class="p-5 text-gray-700 font-medium">{{ $car->year }}</td>
+                <td class="p-5 text-gray-700 font-medium capitalize">{{ $car->transmission }}</td>
+                <td class="p-5 text-gray-700 font-medium">{{ number_format($car->mileage, 0, ',', '.') }} km</td>
+                <td class="p-5 font-bold text-gray-950 text-base">Rp {{ number_format($car->price, 0, ',', '.') }}</td>
 
-                <td class="p-6">
+                <td class="p-5">
                     <form action="{{ route('Car.updateStatus', $car->id) }}" method="POST">
                         @csrf
                         @method('PATCH')
@@ -155,20 +160,20 @@
                             class="text-xs font-bold uppercase tracking-wide px-3 py-1.5 rounded-full border cursor-pointer outline-none transition-all duration-200
                             {{ strtolower($car->status) == 'available' ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' : '' }}
                             {{ strtolower($car->status) == 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100' : '' }}
-                            {{ strtolower($car->status) == 'sold' ? 'bg-gray-100 text-gray-600 border-gray-300 hover:bg-gray-200' : '' }}"
+                            {{ strtolower($car->status) == 'sold' ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100' : '' }}"
                         >
                             <option value="available" {{ strtolower($car->status) == 'available' ? 'selected' : '' }}>🟢 Available</option>
                             <option value="pending" {{ strtolower($car->status) == 'pending' ? 'selected' : '' }}>🟡 Pending</option>
-                            <option value="sold" {{ strtolower($car->status) == 'sold' ? 'selected' : '' }}>🔴 Sold</option>
+                            <option value="sold" {{ strtolower($car->status) == 'sold' ? 'selected' : '' }}>🔵 Sold</option>
                         </select>
                     </form>
                 </td>
 
-                <td class="p-6">
-                  <div class="flex justify-end gap-2">
+                <td class="p-5">
+                  <div class="flex justify-end gap-1.5">
                     <button
                       onclick="window.location.href='{{ route('Car.detail', $car->id) }}'"
-                      class="w-10 h-10 rounded-xl hover:bg-blue-100 hover:text-blue-600 flex items-center justify-center transition cursor-pointer"
+                      class="w-9 h-9 rounded-xl text-gray-500 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition cursor-pointer"
                       title="View Details & Offers"
                     >
                       <i data-lucide="eye" class="w-4 h-4"></i>
@@ -176,32 +181,34 @@
                     
                     <button
                       onclick="window.location.href='{{ route('Car.edit', $car->id) }}'"
-                      class="w-10 h-10 rounded-xl hover:bg-yellow-100 hover:text-yellow-600 flex items-center justify-center transition cursor-pointer"
+                      class="w-9 h-9 rounded-xl text-gray-500 hover:bg-amber-50 hover:text-amber-600 flex items-center justify-center transition cursor-pointer"
                       title="Edit Asset"
                     >
                       <i data-lucide="edit" class="w-4 h-4"></i>
                     </button>
                     
-                    <form action="{{ route('Car.destroy', $car->id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this vehicle from the system? This action cannot be undone.');">
+                    @if(auth()->user()->isOwner())
+                    <form action="{{ route('Car.destroy', $car->id) }}" method="POST" onsubmit="return confirm('Are you sure you want to delete this vehicle from the system? This action cannot be undone.');" class="inline">
                         @csrf
                         @method('DELETE')
                         <button
                           type="submit"
-                          class="w-10 h-10 rounded-xl hover:bg-red-100 hover:text-red-600 flex items-center justify-center transition cursor-pointer text-gray-500"
+                          class="w-9 h-9 rounded-xl text-gray-400 hover:bg-rose-50 hover:text-rose-600 flex items-center justify-center transition cursor-pointer"
                           title="Delete Asset"
                         >
                           <i data-lucide="trash-2" class="w-4 h-4"></i>
                         </button>
                     </form>
+                    @endif
                   </div>
                 </td>
               </tr>
               @empty
               <tr>
                 <td colspan="7" class="p-12 text-center text-gray-400 italic bg-gray-50/50">
-                  <div class="flex flex-col items-center gap-2">
-                    <i data-lucide="package-open" class="w-8 h-8 text-gray-300"></i>
-                    <span>No vehicles registered in the showroom system yet.</span>
+                  <div class="flex flex-col items-center justify-center gap-2 py-4">
+                    <i data-lucide="package-open" class="w-10 h-10 text-gray-300"></i>
+                    <span class="font-medium text-sm">No vehicles registered in the showroom system yet.</span>
                   </div>
                 </td>
               </tr>
@@ -209,9 +216,9 @@
 
               <tr id="noResultsRow" class="hidden">
                 <td colspan="7" class="p-12 text-center text-gray-400 italic bg-gray-50/50">
-                  <div class="flex flex-col items-center gap-2">
-                    <i data-lucide="search-code" class="w-8 h-8 text-gray-300"></i>
-                    <span>No vehicles match your search criteria.</span>
+                  <div class="flex flex-col items-center justify-center gap-2 py-4">
+                    <i data-lucide="search" class="w-10 h-10 text-gray-300"></i>
+                    <span class="font-medium text-sm">No vehicles match your search criteria.</span>
                   </div>
                 </td>
               </tr>
@@ -233,7 +240,7 @@
 
         function filterVehicles() {
           const searchQuery = searchInput.value.toLowerCase().trim();
-          const selectedBrand = brandSelect.value.toLowerCase();
+          const selectedBrand = brandSelect.value.toLowerCase().trim();
           let visibleCount = 0;
 
           vehicleItems.forEach((item) => {
@@ -257,23 +264,17 @@
           } else {
             noResultsRow.classList.add("hidden");
           }
+          
+          lucide.createIcons();
         }
 
         if (searchInput) searchInput.addEventListener("input", filterVehicles);
         if (brandSelect) brandSelect.addEventListener("change", filterVehicles);
+        
+        lucide.createIcons();
       });
     </script>
 
-    @if(session('success'))
-    <script>
-        Swal.fire({
-            title: 'Success!',
-            text: "{{ session('success') }}",
-            icon: 'success',
-            confirmButtonColor: '#2563EB',
-            confirmButtonText: 'Great!'
-        });
-    </script>
-    @endif
+    @include('partials.flash')
   </body>
-</html>
+</html> 

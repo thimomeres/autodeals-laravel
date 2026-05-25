@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -23,6 +24,12 @@ class AuthController extends Controller
 
         if (Auth::attempt($credentials, $request->has('remember'))) {
             $request->session()->regenerate();
+
+            ActivityLogger::log(
+                'auth.login',
+                'Login berhasil: ' . Auth::user()->name,
+            );
+
             return redirect()->intended('dashboard');
         }
 

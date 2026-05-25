@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'offer_api' => [
+        'key' => env('OFFER_API_KEY'),
+    ],
+
 ];

@@ -3,41 +3,82 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Events\OfferSubmitted;
 use App\Models\Car;
 use App\Models\CarImage; 
-use App\Models\Offer; // <--- WAJIB IMPORT MODEL OFFER DI SINI
+use App\Models\Offer;
+use App\Services\ActivityLogger;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Storage; 
+use Illuminate\Support\Facades\Storage;
+use Symfony\Component\HttpFoundation\StreamedResponse; 
 
 class CarController extends Controller
 {
     public function index()
     {
-        $cars = Car::all();
+        // 🟢 Mengambil data mobil beserta relasi gambarnya agar lebih ringan (Eager Loading)
+        $cars = Car::with('images')->get();
         
         // Menghitung jumlah notifikasi riil untuk halaman Inventory
         $unreadNotificationsCount = Offer::where('status', 'pending_review')->count();
 
+        // 🛠️ Mengembalikan view 'infentory' sesuai nama file fisik Anda (infentory.blade.php)
         return view('infentory', compact('cars', 'unreadNotificationsCount'));
     }
 
-    // --- FITUR BARU: MENERIMA DATA DARI POSTMAN ---
+    // =========================================================================
+    // ⚡ FITUR UTAMA: MENERIMA DATA DARI POSTMAN + OTOMATISASI STATUS MOBIL
+    // =========================================================================
     public function submitOffer(Request $request)
     {
-        // Validasi data kiriman dari Postman
         $validated = $request->validate([
-            'car_id'        => 'required|exists:cars,id',
-            'buyer_name'    => 'required|string|max:255',
-            'price_offered' => 'required|numeric',
+            'car_id'        => 'required|integer|exists:cars,id',
+            'buyer_name'    => ['required', 'string', 'max:255', 'regex:/^[\pL\pM\pN\s.\'\-]+$/u'],
+            'price_offered' => 'required|numeric|min:1|max:999999999999999',
         ]);
 
-        // Simpan data penawaran baru ke database MySQL
-        Offer::create($validated);
+        $car = Car::find($validated['car_id']);
 
-        // Kembalikan respon sukses berformat JSON ke Postman
+        if (! $car || strtolower((string) $car->status) === 'sold') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Vehicle is not available for new offers.',
+            ], 422);
+        }
+
+        $offer = Offer::create([
+            'car_id'        => $validated['car_id'],
+            'buyer_name'    => trim($validated['buyer_name']),
+            'price_offered' => $validated['price_offered'],
+            'status'        => 'pending_review',
+        ]);
+
+        $offer->load('car');
+
+        event(new OfferSubmitted($offer));
+
+        if ($car->status !== 'sold') {
+            $car->update(['status' => 'pending']);
+        }
+
+        ActivityLogger::log(
+            'offer.submitted',
+            "Penawaran masuk dari {$offer->buyer_name} untuk {$car->brand} {$car->model}",
+            Offer::class,
+            $offer->id,
+            ['car_id' => $car->id, 'price_offered' => $offer->price_offered],
+        );
+
         return response()->json([
             'success' => true,
-            'message' => 'Offer submitted successfully to AutoDeals system!'
+            'message' => 'Offer submitted successfully. Vehicle status updated to pending.',
+            'data' => [
+                'id' => $offer->id,
+                'car_id' => $offer->car_id,
+                'buyer_name' => $offer->buyer_name,
+                'price_offered' => $offer->price_offered,
+                'status' => $offer->status,
+            ],
         ], 201);
     }
 
@@ -80,12 +121,20 @@ class CarController extends Controller
             }
         }
 
+        ActivityLogger::log(
+            'car.created',
+            "Unit baru ditambahkan: {$car->brand} {$car->model} ({$car->stock_code})",
+            Car::class,
+            $car->id,
+        );
+
         return redirect()->route('inventory')->with('success', 'New vehicle and photos added successfully!');
     }
 
     public function show($id)
     {
-        $car = Car::with('images')->findOrFail($id);
+        $car = Car::with(['images', 'offers' => fn ($q) => $q->latest()])->findOrFail($id);
+
         return view('CardDetail', compact('car'));
     }
 
@@ -95,7 +144,6 @@ class CarController extends Controller
         return view('AddNewCar', compact('car'));
     }
 
-    // --- SAAT UPDATE, FOTO DISET 'NULLABLE' (OPSIONAL) ---
     public function update(Request $request, $id)
     {
         $car = Car::findOrFail($id);
@@ -106,10 +154,10 @@ class CarController extends Controller
             'year'               => 'required|integer',
             'price'              => 'required|numeric',
             'mileage'            => 'required|integer',
-            'color'              => 'required|string',
-            'transmission'       => 'required|string',
-            'fuel_type'          => 'required|string',
-            'engine_capacity_cc' => 'required|integer',
+            'color'               => 'required|string',
+            'transmission'        => 'required|string',
+            'fuel_type'           => 'required|string',
+            'engine_capacity_cc'  => 'required|integer',
             'condition'          => 'required|string',
             'fuel_tank_capacity' => 'required|integer',
             'seating_capacity'   => 'required|integer',
@@ -150,12 +198,20 @@ class CarController extends Controller
             }
         }
 
-        return redirect()->to('/infentory')->with('success', 'Vehicle data updated successfully!');
+        ActivityLogger::log(
+            'car.updated',
+            "Data unit diperbarui: {$car->brand} {$car->model} ({$car->stock_code})",
+            Car::class,
+            $car->id,
+        );
+
+        return redirect()->route('inventory')->with('success', 'Vehicle data updated successfully!');
     }
 
     public function destroy($id)
     {
         $car = Car::with('images')->findOrFail($id);
+        $label = "{$car->brand} {$car->model} ({$car->stock_code})";
 
         foreach ($car->images as $image) {
             if (Storage::disk('public')->exists($image->image_path)) {
@@ -165,24 +221,31 @@ class CarController extends Controller
 
         $car->delete();
 
+        ActivityLogger::log('car.deleted', "Unit dihapus: {$label}");
+
         return redirect()->route('inventory')->with('success', 'Vehicle and its associated assets have been permanently deleted.');
     }
 
     public function dashboard()
     {
-        // 1. Menghitung Total Nilai Investasi (Mobil berstatus 'available') dalam satuan Milyar (B)
         $totalRaw = Car::where('status', 'available')->sum('price');
         $totalInventoryValue = number_format($totalRaw / 1000000000, 1, '.', '');
 
-        // 2. Simulasi Target Penjualan (Statis sesuai template Anda)
-        $unitsSold = 45; 
-        $salesTarget = 60;
-        $targetPercentage = 75;
+        $unitsSold = Offer::where('status', 'accepted')
+            ->whereMonth('updated_at', now()->month)
+            ->whereYear('updated_at', now()->year)
+            ->count();
+
+        $salesTarget = config('autodeals.monthly_sales_target', 10);
+        $targetPercentage = $salesTarget > 0
+            ? min(100, (int) round(($unitsSold / $salesTarget) * 100))
+            : 0;
 
         // 3. Menghitung Sebaran Stok Riil dari Database berdasarkan Brand
         $toyotaCount = Car::where('brand', 'Toyota')->count();
         $hondaCount = Car::where('brand', 'Honda')->count();
-        $bmwMercedesCount = Car::where('brand', 'BMW')->orWhere('brand', 'Mercedes')->count();
+        
+        $bmwMercedesCount = Car::whereIn('brand', ['BMW', 'Mercedes'])->count();
         $totalCars = Car::count();
 
         $toyotaPercent = $totalCars > 0 ? round(($toyotaCount / $totalCars) * 100) : 0;
@@ -206,6 +269,9 @@ class CarController extends Controller
         ));
     }
 
+    // =========================================================================
+    // ⚡ FITUR MAKSIMALISASI: UPDATE MANUAL DROPDOWN + SINKRONISASI DATA OFFER
+    // =========================================================================
     public function updateStatus(Request $request, Car $car)
     {
         $request->validate([
@@ -216,6 +282,163 @@ class CarController extends Controller
             'status' => $request->status
         ]);
 
+        // ✨ Tambahan Otomatisasi: Jika Admin manual mengubah status mobil, status tawaran ikut menyesuaikan
+        if ($request->status === 'sold') {
+            Offer::where('car_id', $car->id)->where('status', 'pending_review')->update(['status' => 'accepted']);
+        } elseif ($request->status === 'available') {
+            Offer::where('car_id', $car->id)->where('status', 'pending_review')->update(['status' => 'rejected']);
+        }
+
+        ActivityLogger::log(
+            'car.status_updated',
+            "Status {$car->stock_code} diubah menjadi {$request->status}",
+            Car::class,
+            $car->id,
+        );
+
         return redirect()->back()->with('success', 'Status mobil berhasil diperbarui menjadi ' . ucfirst($request->status));
+    }
+
+    // =========================================================================
+    // ⚡ PANEL TINJAUAN: ADMIN MENYETUJUI PENAWARAN (ACCEPT)
+    // =========================================================================
+    public function acceptOffer($id)
+    {
+        $offer = Offer::findOrFail($id);
+
+        if ($offer->status !== 'pending_review') {
+            return redirect()->back()->with('error', 'Only pending offers can be accepted.');
+        }
+
+        $offer->update(['status' => 'accepted']);
+
+        // 2. ✨ AUTO-UPDATE: Ubah status ketersediaan unit mobil menjadi 'sold'
+        $car = Car::find($offer->car_id);
+        if ($car) {
+            $car->update(['status' => 'sold']);
+        }
+
+        // 3. ✨ AUTO-CLEANUP: Tolak semua penawaran pending lainnya khusus untuk mobil ini
+        Offer::where('car_id', $offer->car_id)
+             ->where('id', '!=', $offer->id)
+             ->where('status', 'pending_review')
+             ->update(['status' => 'rejected']);
+
+        ActivityLogger::log(
+            'offer.accepted',
+            "Penawaran diterima dari {$offer->buyer_name}",
+            Offer::class,
+            $offer->id,
+        );
+
+        return redirect()->back()->with('success', 'Offer accepted! The vehicle is now marked as SOLD.');
+    }
+
+    // =========================================================================
+    // ⚡ PANEL TINJAUAN: ADMIN MENOLAK PENAWARAN (REJECT)
+    // =========================================================================
+    public function rejectOffer($id)
+    {
+        $offer = Offer::findOrFail($id);
+
+        if ($offer->status !== 'pending_review') {
+            return redirect()->back()->with('error', 'Only pending offers can be rejected.');
+        }
+
+        $offer->update(['status' => 'rejected']);
+
+        // 2. ✨ AUTO-RESTORE: Periksa apakah masih ada sisa tawaran pending lain pada mobil ini?
+        $remainingOffers = Offer::where('car_id', $offer->car_id)
+                                ->where('id', '!=', $offer->id)
+                                ->where('status', 'pending_review')
+                                ->count();
+
+        // Jika sudah tidak ada tawaran pending lainnya, kembalikan status unit mobil ke 'available'
+        if ($remainingOffers === 0) {
+            $car = Car::find($offer->car_id);
+            if ($car) {
+                $car->update(['status' => 'available']);
+            }
+        }
+
+        ActivityLogger::log(
+            'offer.rejected',
+            "Penawaran ditolak dari {$offer->buyer_name}",
+            Offer::class,
+            $offer->id,
+        );
+
+        return redirect()->back()->with('success', 'Offer has been rejected successfully.');
+    }
+
+    public function sales()
+    {
+        $salesData = Offer::with('car')
+            ->where('status', 'accepted')
+            ->latest()
+            ->get();
+
+        $totalRevenue = 0;
+        $totalProfit = 0;
+
+        foreach ($salesData as $sale) {
+            $dealPrice = $sale->price_offered ?? 0;
+            $baseCost = $sale->car->price ?? 0;
+
+            $totalRevenue += $dealPrice;
+            $totalProfit += $dealPrice - $baseCost;
+        }
+
+        $unreadNotificationsCount = Offer::where('status', 'pending_review')->count();
+
+        return view('sales', compact(
+            'salesData',
+            'totalRevenue',
+            'totalProfit',
+            'unreadNotificationsCount'
+        ));
+    }
+
+    public function exportSalesCsv(): StreamedResponse
+    {
+        $salesData = Offer::with('car')
+            ->where('status', 'accepted')
+            ->latest()
+            ->get();
+
+        $filename = 'autodeals-sales-' . now()->format('Y-m-d') . '.csv';
+
+        return response()->streamDownload(function () use ($salesData) {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, [
+                'Invoice Date',
+                'Buyer Name',
+                'Brand',
+                'Model',
+                'Stock Code',
+                'Base Cost',
+                'Deal Price',
+                'Net Profit',
+            ]);
+
+            foreach ($salesData as $sale) {
+                $baseCost = $sale->car->price ?? 0;
+                $dealPrice = $sale->price_offered ?? 0;
+                fputcsv($handle, [
+                    $sale->updated_at->format('Y-m-d H:i'),
+                    $sale->buyer_name,
+                    $sale->car->brand ?? '',
+                    $sale->car->model ?? '',
+                    $sale->car->stock_code ?? '',
+                    $baseCost,
+                    $dealPrice,
+                    $dealPrice - $baseCost,
+                ]);
+            }
+
+            fclose($handle);
+        }, $filename, [
+            'Content-Type' => 'text/csv',
+        ]);
     }
 }
