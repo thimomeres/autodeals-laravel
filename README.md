@@ -238,7 +238,7 @@ users (admin)
 
 ### Alur penerimaan (otomatis)
 
-Saat admin **menerima** penawaran (`PATCH /offers/{id}/accept`):
+Saat admin **menerima** penawaran (`POST /offers/{id}/accept`):
 
 1. `status` penawaran tersebut → **`accepted`**
 2. **`cars.status`** terkait → **`sold`**
@@ -279,7 +279,138 @@ php artisan migrate
 
 ---
 
-## 8. Referensi Rute Admin
+## 8. API Mobile (Flutter)
+
+Endpoint stateless untuk katalog aplikasi mobile (tanpa login session admin).
+
+| Method | URL | Keterangan |
+|--------|-----|------------|
+| POST | `/api/register` | Daftar pembeli di tabel `customers` (`name`, `email`, `password`, `phone` opsional) → Sanctum token |
+| POST | `/api/login` | Login pembeli (`customers`) → Sanctum token |
+| POST | `/api/logout` | Cabut token (header `Authorization: Bearer …`) |
+| GET | `/api/notifications` | Inbox notifikasi (Sanctum), terbaru dulu |
+| POST | `/api/notifications/{id}/read` | Tandai notifikasi sudah dibaca |
+| GET | `/api/cars` | Daftar mobil `status = available`, terbaru dulu, dengan gambar |
+| GET | `/api/cars/{id}` | Detail lengkap satu unit + URL gambar penuh |
+| POST | `/api/offers` | **Kirim penawaran dari Flutter** (header `X-API-Key` wajib) |
+| POST | `/api/submit-offer` | Alias lama (sama dengan `/api/offers`) |
+
+**Body JSON `POST /api/offers`:**
+
+```json
+{
+  "car_id": 1,
+  "buyer_name": "Timo",
+  "price_offered": 780000000
+}
+```
+
+Alternatif: gunakan `target_vehicle` sebagai pengganti `car_id`.
+
+| GET | `/api/my-offers?buyer_name=Timo` | Riwayat penawaran user mobile |
+| POST / PUT | `/api/offers/{id}/cancel` | Batalkan penawaran (`buyer_name` di body) |
+
+**Cancel body:**
+```json
+{ "buyer_name": "Timo" }
+```
+Hanya status `pending_review` yang bisa dibatalkan → menjadi `cancelled`; mobil kembali `available` jika tidak ada pending lain.
+
+**Auth (Sanctum) — contoh:**
+
+```bash
+# Register
+curl -X POST http://127.0.0.1:8000/api/register \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Budi","email":"budi@example.com","password":"password123"}'
+
+# Login
+curl -X POST http://127.0.0.1:8000/api/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"budi@example.com","password":"password123"}'
+```
+
+Respons sukses berisi `data.user` dan `data.token` — kirim di header: `Authorization: Bearer <token>`.
+
+**Pemisahan akun:** `users` = admin dashboard (owner/staff). `customers` = aplikasi mobile (Sanctum). Token disimpan di `personal_access_tokens` (polymorphic ke `App\Models\Customer`).
+
+**Contoh uji (terminal):**
+
+```bash
+curl http://127.0.0.1:8000/api/cars
+curl http://127.0.0.1:8000/api/cars/1
+```
+
+**Flutter / emulator:** gunakan IP Mac Anda, bukan `localhost`, misalnya `http://192.168.1.10:8000/api/cars`. Set `APP_URL` di `.env` ke URL yang bisa dijangkau device agar `image_url` benar.
+
+**CORS:** atur `CORS_ALLOWED_ORIGINS=*` di development (`.env.example`).
+
+**Dashboard admin (bukan React):** UI pakai **Laravel Blade + Laravel Echo + Reverb**. Setelah `POST /api/offers` sukses, baris di **Recent Action Required** ter-update **otomatis** (tanpa refresh) jika `php artisan reverb:start` dan `npm run dev` aktif.
+
+### WebSocket real-time untuk Flutter (Reverb)
+
+Semua event broadcast memakai **channel publik** (`Illuminate\Broadcasting\Channel`), **bukan** `PrivateChannel` — sehingga aplikasi mobile tidak perlu cookie session browser. Cukup koneksi WebSocket + `REVERB_APP_KEY`.
+
+| Channel | Pemakai |
+|---------|---------|
+| `admin-dashboard` | Dashboard Blade (`resources/js/dashboard.js`) |
+| `mobile-app` | Aplikasi Flutter (subscribe channel ini) |
+
+Nama event di wire (dari `broadcastAs()`, **tanpa** namespace `App\Events\`): `OfferSubmitted`, `OfferCancelled`, `OfferAccepted`, `OfferRejected`, `VehicleStockUpdated`.
+
+| Client | Cara subscribe |
+|--------|----------------|
+| **Flutter / Pusher langsung** | `channel.bind(eventName: 'OfferSubmitted', ...)` — **tanpa** titik |
+| **Laravel Echo (dashboard web)** | `channel.listen('.OfferSubmitted', ...)` — **dengan** titik di depan |
+
+Jika Flutter tidak menerima event, coba bind juga ke `App\\Events\\OfferSubmitted` sementara untuk debug — artinya `broadcastAs()` belum aktif (cek `BROADCAST_CONNECTION=reverb` dan restart Reverb).
+
+**Contoh subscribe (konsep, sesuaikan package Flutter Echo Anda):**
+
+```dart
+// host = IP Mac (bukan localhost di device fisik), port = REVERB_PORT (default 8080)
+final channel = echo.channel('mobile-app');
+
+channel.listen('.OfferSubmitted', (payload) {
+  final buyer = payload['buyer_name'];
+  final car = payload['car']; // id, status, brand, model, stock_code, is_available, ...
+});
+
+channel.listen('.OfferCancelled', (payload) { /* filter payload['buyer_name'] */ });
+
+channel.listen('OfferAccepted', (payload) {
+  if (payload['customer_id'] == currentCustomerId) {
+    // status: accepted, vehicle_label, car.status: sold
+  }
+});
+
+channel.listen('OfferRejected', (payload) {
+  if (payload['customer_id'] == currentCustomerId) {
+    // reject_reason, status: rejected
+  }
+});
+
+channel.listen('.VehicleStockUpdated', (payload) {
+  // reason: offer_submitted | offer_cancelled | offer_accepted | offer_rejected | admin_status_updated
+  final car = payload['car'];
+});
+```
+
+Field penting di payload JSON:
+
+- `event_type` — `offer.submitted`, `offer.cancelled`, `offer.accepted`, `offer.rejected`, `vehicle.stock_updated`
+- `offer_id`, `customer_id`, `status`, `vehicle_label`, `reject_reason` (jika ditolak)
+- `offer` — objek lengkap termasuk `customer_id`, `reject_reason`
+- `car` / `vehicle` — objek mobil lengkap
+- Filter Flutter: `payload['customer_id'] == loggedInCustomerId`
+
+**Admin accept/reject (web):** `POST /offers/{id}/accept`, `POST /offers/{id}/reject` (body: `reject_reason` opsional). Status DB: `accepted` / `rejected` (bukan `approved`).
+
+File event: `OfferSubmitted`, `OfferCancelled`, `OfferAccepted`, `OfferRejected`, `VehicleStockUpdated` + trait `BroadcastsOnPublicChannels`.
+
+---
+
+## 9. Referensi Rute Admin
 
 | Method | URI | Name | Auth |
 |--------|-----|------|------|
@@ -292,14 +423,14 @@ php artisan migrate
 | GET | `/profile` | `profile.edit` | Ya |
 | GET | `/admin/users` | `users.index` | Owner |
 | GET | `/admin/activity` | `activity.index` | Owner |
-| PATCH | `/offers/{id}/accept` | `offers.accept` | Ya |
+| POST | `/offers/{id}/accept` | `offers.accept` | Ya |
 | DELETE | `/vehicle/{id}` | `Car.destroy` | Owner |
-| PATCH | `/offers/{id}/reject` | `offers.reject` | Ya |
+| POST | `/offers/{id}/reject` | `offers.reject` | Ya (`reject_reason` opsional) |
 | POST | `/api/submit-offer` | — | Publik (API Key + rate limit) |
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Masalah | Solusi |
 |---------|--------|
@@ -314,7 +445,7 @@ php artisan migrate
 
 ---
 
-## 10. Keamanan (Security)
+## 11. Keamanan (Security)
 
 Bagian ini merangkum perlindungan yang **sudah diterapkan** di proyek dan rekomendasi untuk lingkungan production.
 
@@ -401,11 +532,12 @@ Jika inventori tetap terbuka tanpa login, jalankan `php artisan config:clear` da
 
 ### Real-time (Reverb)
 
-- Channel `admin-dashboard` bersifat **publik** (cocok untuk backoffice internal).
-- Untuk production multi-tenant, pertimbangkan `PrivateChannel` + otorisasi di `routes/channels.php` dan token Echo terautentikasi.
+- Channel **`admin-dashboard`** dan **`mobile-app`** bersifat **publik** (tanpa auth cookie; cocok untuk Flutter + backoffice internal).
+- Event: `OfferSubmitted`, `OfferCancelled`, `VehicleStockUpdated` — semua di-broadcast ke kedua channel.
+- Untuk production publik internet, pertimbangkan `PrivateChannel` + Sanctum/Bearer di `routes/channels.php`.
 
 ---
 
-## 11. Lisensi
+## 12. Lisensi
 
 Proyek ini dibangun di atas framework Laravel (MIT). Logika bisnis dan antarmuka khusus disediakan untuk backoffice showroom AutoDeals.

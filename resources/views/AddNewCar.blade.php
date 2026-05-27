@@ -104,9 +104,13 @@
                   <input
                     type="number"
                     name="price"
-                    value="{{ isset($car) ? $car->price : '' }}"
+                    value="{{ isset($car) ? (int) $car->price : '' }}"
+                    min="1"
+                    max="9999999999999999"
+                    step="1"
                     required
                     class="input-control"
+                    placeholder="Contoh: 485000000"
                   />
                 </div>
               </div>
@@ -125,6 +129,8 @@
                     type="number"
                     name="mileage"
                     value="{{ isset($car) ? $car->mileage : '' }}"
+                    min="0"
+                    max="9999999"
                     required
                     class="input-control"
                   />

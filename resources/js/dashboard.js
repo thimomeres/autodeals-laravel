@@ -132,11 +132,10 @@ function buildTableRow(payload) {
             </button>
             <form id="accept-form-${offerId}" action="${acceptUrl}" method="POST" class="hidden">
                 <input type="hidden" name="_token" value="${csrf}">
-                <input type="hidden" name="_method" value="PATCH">
             </form>
             <form id="reject-form-${offerId}" action="${rejectUrl}" method="POST" class="hidden">
                 <input type="hidden" name="_token" value="${csrf}">
-                <input type="hidden" name="_method" value="PATCH">
+                <input type="hidden" name="reject_reason" value="">
             </form>
         </td>
     `;
@@ -193,7 +192,7 @@ function prependOfferToUi(payload) {
     }
 }
 
-function showOfferToast(buyerName) {
+function showOfferToast(buyerName, options = {}) {
     if (typeof Swal === 'undefined') {
         return;
     }
@@ -201,32 +200,254 @@ function showOfferToast(buyerName) {
     Swal.fire({
         toast: true,
         position: 'top-end',
-        icon: 'info',
-        title: `New offer received from ${buyerName}!`,
+        icon: options.icon ?? 'info',
+        title: options.title ?? `New offer received from ${buyerName}!`,
         showConfirmButton: false,
-        timer: 4500,
+        timer: options.timer ?? 4500,
         timerProgressBar: true,
     });
 }
 
-function handleOfferSubmitted(payload) {
+function showCancellationToast(payload) {
+    if (typeof Swal === 'undefined') {
+        return;
+    }
+
+    const message =
+        payload.cancel_message ??
+        `Pemberitahuan: Penawaran dari ${payload.buyer_name ?? 'pengguna'} untuk mobil ${payload.vehicle_label ?? ''} telah DIBATALKAN oleh pengguna.`;
+
+    Swal.fire({
+        toast: true,
+        position: 'top-end',
+        icon: 'warning',
+        title: message,
+        showConfirmButton: false,
+        timer: 6000,
+        timerProgressBar: true,
+        width: '28rem',
+    });
+}
+
+function removeOfferFromUi(offerId) {
+    if (!offerId) {
+        return;
+    }
+
+    document
+        .querySelectorAll(`[data-offer-id="${offerId}"]`)
+        .forEach((element) => element.remove());
+
+    const tableBody = document.getElementById('pending-offers-table-body');
+    const notificationsList = document.getElementById('notifications-list');
+
+    if (tableBody && tableBody.querySelectorAll('tr[data-offer-id]').length === 0) {
+        const emptyRow = document.createElement('tr');
+        emptyRow.id = 'pending-offers-empty-row';
+        emptyRow.innerHTML = `
+            <td colspan="5" class="p-8 text-center text-gray-400 font-medium">
+                No pending offers available at the moment.
+            </td>
+        `;
+        tableBody.appendChild(emptyRow);
+    }
+
+    if (
+        notificationsList &&
+        notificationsList.querySelectorAll('[data-offer-id]').length === 0 &&
+        !document.getElementById('notifications-empty')
+    ) {
+        const empty = document.createElement('div');
+        empty.id = 'notifications-empty';
+        empty.className =
+            'p-8 text-center flex flex-col items-center justify-center gap-2';
+        empty.innerHTML =
+            '<p class="text-xs text-gray-400 font-medium">All caught up! No new offers.</p>';
+        notificationsList.appendChild(empty);
+    }
+}
+
+function handleOfferSubmitted(payload, options = {}) {
     const count = payload.pending_review_count ?? 0;
 
     updatePendingCounts(count);
     prependOfferToUi(payload);
-    showOfferToast(payload.buyer_name ?? payload.offer?.buyer_name ?? 'a buyer');
+
+    if (!options.silent) {
+        showOfferToast(payload.buyer_name ?? payload.offer?.buyer_name ?? 'a buyer');
+    }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    if (typeof window.Echo === 'undefined') {
-        console.warn('Laravel Echo is not initialized. Check Vite env and Reverb.');
+function handleOfferCancelled(payload) {
+    const offerId = payload.offer?.id;
+    const count = payload.pending_review_count ?? 0;
+
+    updatePendingCounts(count);
+    removeOfferFromUi(offerId);
+    showCancellationToast(payload);
+
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
+function handleOfferDecision(payload, status) {
+    const offerId = payload.offer_id ?? payload.offer?.id;
+    const count = payload.pending_review_count;
+
+    if (typeof count === 'number') {
+        updatePendingCounts(count);
+    } else {
+        updatePendingCounts(Math.max(0, getPendingCountFromDom() - 1));
+    }
+
+    removeOfferFromUi(offerId);
+
+    if (typeof Swal !== 'undefined') {
+        const label = payload.vehicle_label ?? payload.offer?.buyer_name ?? 'penawaran';
+        Swal.fire({
+            toast: true,
+            position: 'top-end',
+            icon: status === 'accepted' ? 'success' : 'info',
+            title:
+                status === 'accepted'
+                    ? `Penawaran diterima — ${label}`
+                    : `Penawaran ditolak — ${label}`,
+            showConfirmButton: false,
+            timer: 4000,
+        });
+    }
+
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
+}
+
+function getPendingCountFromDom() {
+    const badge = document.getElementById('pending-offers-badge');
+    return badge ? parseInt(badge.textContent, 10) || 0 : 0;
+}
+
+function updateReverbStatus(state) {
+    const el = document.getElementById('reverb-connection-status');
+    const dot = document.getElementById('reverb-connection-dot');
+    if (!el) {
         return;
     }
 
-    window.Echo.channel('admin-dashboard').listen(
-        '.OfferSubmitted',
-        (payload) => {
-            handleOfferSubmitted(payload);
+    const labels = {
+        live: { text: 'Live', textClass: 'text-emerald-600', dotClass: 'bg-emerald-500' },
+        connecting: { text: 'Connecting', textClass: 'text-amber-600', dotClass: 'bg-amber-400 animate-pulse' },
+        offline: { text: 'Offline', textClass: 'text-rose-600', dotClass: 'bg-rose-500 animate-pulse' },
+    };
+
+    const cfg = labels[state] ?? labels.offline;
+    el.textContent = cfg.text;
+    el.className = `text-[10px] font-bold uppercase tracking-wider ${cfg.textClass}`;
+
+    if (dot) {
+        dot.className = `w-2 h-2 rounded-full ${cfg.dotClass}`;
+    }
+}
+
+let echoListenersBound = false;
+let pollIntervalId = null;
+
+function bindEchoListeners() {
+    if (echoListenersBound || typeof window.Echo === 'undefined') {
+        return;
+    }
+
+    echoListenersBound = true;
+
+    const channel = window.Echo.channel('admin-dashboard');
+
+    channel.listen('.OfferSubmitted', (payload) => {
+        console.info('[AutoDeals] WebSocket OfferSubmitted', payload);
+        handleOfferSubmitted(payload);
+    });
+
+    channel.listen('.OfferCancelled', (payload) => handleOfferCancelled(payload));
+    channel.listen('.OfferAccepted', (payload) => handleOfferDecision(payload, 'accepted'));
+    channel.listen('.OfferRejected', (payload) => handleOfferDecision(payload, 'rejected'));
+
+    channel.subscribed(() => {
+        console.info('[AutoDeals] Subscribed: admin-dashboard');
+        updateReverbStatus('live');
+    });
+
+    channel.error((error) => {
+        console.error('[AutoDeals] Channel error', error);
+        updateReverbStatus('offline');
+    });
+}
+
+async function syncPendingOffersFromServer() {
+    const url =
+        (window.AutodealsConfig && window.AutodealsConfig.pendingOffersSyncUrl) ||
+        '/dashboard/pending-offers-sync';
+
+    try {
+        const response = await fetch(url, {
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        });
+
+        if (!response.ok) {
+            return;
         }
-    );
+
+        const data = await response.json();
+        const count = data.pending_review_count ?? 0;
+        updatePendingCounts(count);
+
+        (data.offers ?? []).forEach((payload) => {
+            const offerId = payload.offer?.id;
+            if (!offerId) {
+                return;
+            }
+
+            const exists = document.querySelector(`[data-offer-id="${offerId}"]`);
+            if (!exists) {
+                handleOfferSubmitted(payload, { silent: false });
+            }
+        });
+    } catch (error) {
+        console.warn('[AutoDeals] Polling sync gagal', error);
+    }
+}
+
+function startPollingFallback() {
+    if (pollIntervalId) {
+        return;
+    }
+
+    syncPendingOffersFromServer();
+    pollIntervalId = window.setInterval(syncPendingOffersFromServer, 4000);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateReverbStatus('connecting');
+    bindEchoListeners();
+    startPollingFallback();
+});
+
+window.addEventListener('autodeals:reverb-connecting', () => {
+    updateReverbStatus('connecting');
+});
+
+window.addEventListener('autodeals:reverb-connected', () => {
+    updateReverbStatus('live');
+    bindEchoListeners();
+});
+
+window.addEventListener('autodeals:reverb-error', () => {
+    updateReverbStatus('offline');
+});
+
+window.addEventListener('autodeals:reverb-disconnected', () => {
+    updateReverbStatus('offline');
 });

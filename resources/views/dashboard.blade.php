@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AutoDeals - Dashboard Control Center</title>
+    {{-- Indikator koneksi WebSocket (Reverb) — hijau = Live --}}
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="stylesheet" href="{{ asset('css/style.css') }}">
@@ -13,6 +14,21 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <meta name="csrf-token" content="{{ csrf_token() }}" />
+    <script>
+      if (window.location.hostname === '0.0.0.0') {
+        window.location.replace(
+          window.location.href.replace('0.0.0.0', '127.0.0.1')
+        );
+      }
+    </script>
+    <script>
+      window.AutodealsReverb = {
+        key: @json(config('broadcasting.connections.reverb.key')),
+        host: @json(config('broadcasting.connections.reverb.options.host')),
+        port: @json((int) config('broadcasting.connections.reverb.options.port', 8080)),
+        scheme: @json(config('broadcasting.connections.reverb.options.scheme', 'http')),
+      };
+    </script>
     @vite(['resources/js/dashboard.js'])
 
     <style>
@@ -47,6 +63,10 @@
           </div>
 
           <div class="flex items-center gap-4 relative" x-data="{ open: false }">
+            <div class="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-200" title="Status WebSocket Reverb">
+              <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse" id="reverb-connection-dot"></span>
+              <span id="reverb-connection-status" class="text-[10px] font-bold uppercase tracking-wider text-amber-600">Connecting</span>
+            </div>
             <button 
               type="button" 
               @click="open = !open"
@@ -337,13 +357,12 @@
                           Review Offer
                         </button>
 
-                        <form id="accept-form-{{ $offer->id }}" action="{{ route('offers.accept', $offer->id) }}" method="POST" class="hidden">
+                        <form id="accept-form-{{ $offer->id }}" action="{{ route('offers.accept', $offer) }}" method="POST" class="hidden">
                             @csrf
-                            @method('PATCH')
                         </form>
-                        <form id="reject-form-{{ $offer->id }}" action="{{ route('offers.reject', $offer->id) }}" method="POST" class="hidden">
+                        <form id="reject-form-{{ $offer->id }}" action="{{ route('offers.reject', $offer) }}" method="POST" class="hidden">
                             @csrf
-                            @method('PATCH')
+                            <input type="hidden" name="reject_reason" value="">
                         </form>
                       </td>
                     </tr>
@@ -362,7 +381,6 @@
       </main>
     </div>
 
-    <script src="{{ asset('js/app.js') }}"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>
@@ -370,6 +388,7 @@
         csrfToken: @json(csrf_token()),
         offerAcceptUrl: (id) => `/offers/${id}/accept`,
         offerRejectUrl: (id) => `/offers/${id}/reject`,
+        pendingOffersSyncUrl: @json(route('dashboard.pending-offers-sync')),
       };
 
       document.addEventListener("DOMContentLoaded", function() {
@@ -409,11 +428,25 @@
               }
           }).then((result) => {
               if (result.isConfirmed) {
-                  // Kirim form accept
                   document.getElementById(`accept-form-${offerId}`).submit();
               } else if (result.isDenied) {
-                  // Kirim form reject
-                  document.getElementById(`reject-form-${offerId}`).submit();
+                  Swal.fire({
+                      title: 'Alasan penolakan',
+                      input: 'textarea',
+                      inputLabel: 'Opsional — akan dikirim ke aplikasi mobile pembeli',
+                      inputPlaceholder: 'Contoh: Harga di bawah ekspektasi showroom...',
+                      inputAttributes: { maxlength: 1000 },
+                      showCancelButton: true,
+                      confirmButtonText: 'Kirim penolakan',
+                      cancelButtonText: 'Batal',
+                      confirmButtonColor: '#EF4444',
+                  }).then((rejectResult) => {
+                      if (rejectResult.isConfirmed) {
+                          const form = document.getElementById(`reject-form-${offerId}`);
+                          form.querySelector('[name=reject_reason]').value = rejectResult.value ?? '';
+                          form.submit();
+                      }
+                  });
               }
           });
       }

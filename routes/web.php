@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CarController;
+use App\Http\Controllers\OfferReviewController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\UserController;
 
@@ -28,6 +29,8 @@ Route::post('/logout', [AuthController::class, 'logout'])
 Route::middleware(['auth'])->group(function () {
     // Dashboard & Inventory Utama
     Route::get('/dashboard', [CarController::class, 'dashboard'])->name('dashboard');
+    Route::get('/dashboard/pending-offers-sync', [CarController::class, 'dashboardPendingOffersSync'])
+        ->name('dashboard.pending-offers-sync');
     Route::get('/infentory', [CarController::class, 'index'])->name('inventory');
     Route::get('/sales', [CarController::class, 'sales'])->name('sales');
     Route::get('/sales/export', [CarController::class, 'exportSalesCsv'])->name('sales.export');
@@ -57,9 +60,9 @@ Route::middleware(['auth'])->group(function () {
         return view('AddNewCar');
     })->name('AddNew');
 
-    // ✨ BARU: Rute Keputusan Penawaran Masuk (Accept & Reject)
-    Route::patch('/offers/{offer}/accept', [CarController::class, 'acceptOffer'])->name('offers.accept');
-    Route::patch('/offers/{offer}/reject', [CarController::class, 'rejectOffer'])->name('offers.reject');
+    // Keputusan penawaran admin → broadcast real-time ke mobile-app
+    Route::post('/offers/{offer}/accept', [OfferReviewController::class, 'accept'])->name('offers.accept');
+    Route::post('/offers/{offer}/reject', [OfferReviewController::class, 'reject'])->name('offers.reject');
 });
 
 Route::redirect('/inventory', '/infentory');

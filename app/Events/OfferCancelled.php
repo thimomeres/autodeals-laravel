@@ -11,7 +11,7 @@ use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class OfferSubmitted implements ShouldBroadcastNow
+class OfferCancelled implements ShouldBroadcastNow
 {
     use BroadcastsOnPublicChannels;
     use Dispatchable;
@@ -19,36 +19,37 @@ class OfferSubmitted implements ShouldBroadcastNow
     use SerializesModels;
     use UsesCustomBroadcastName;
 
-    public const BROADCAST_NAME = 'OfferSubmitted';
+    public const BROADCAST_NAME = 'OfferCancelled';
 
-    public function __construct(public Offer $offer)
+    public function __construct(public Offer $offer, public string $vehicleLabel)
     {
         $this->offer->loadMissing('car');
     }
 
     public static function broadcastEventName(): string
     {
-        return config('autodeals.broadcast_events.offer_submitted', self::BROADCAST_NAME);
+        return config('autodeals.broadcast_events.offer_cancelled', self::BROADCAST_NAME);
     }
 
     public function broadcastWith(): array
     {
         $car = $this->offer->car;
+        $buyerName = $this->offer->buyer_name;
 
         return [
-            'event_type' => 'offer.submitted',
+            'event_type' => 'offer.cancelled',
             'broadcast_event' => self::broadcastEventName(),
             'channels' => [
                 config('autodeals.broadcast_channels.admin', 'admin-dashboard'),
                 config('autodeals.broadcast_channels.mobile', 'mobile-app'),
             ],
             'offer' => BroadcastPayload::offer($this->offer),
-            'buyer_name' => $this->offer->buyer_name,
+            'buyer_name' => $buyerName,
             'price_offered' => (float) $this->offer->price_offered,
-            'price_offered_formatted' => 'Rp ' . number_format((float) $this->offer->price_offered, 0, ',', '.'),
+            'vehicle_label' => $this->vehicleLabel,
             'car' => BroadcastPayload::car($car),
             'vehicle' => BroadcastPayload::car($car),
-            'vehicle_label' => BroadcastPayload::vehicleLabel($car),
+            'cancel_message' => "Pemberitahuan: Penawaran dari {$buyerName} untuk mobil {$this->vehicleLabel} telah DIBATALKAN oleh pengguna.",
             'pending_review_count' => Offer::where('status', 'pending_review')->count(),
         ];
     }

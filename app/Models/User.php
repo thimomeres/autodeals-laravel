@@ -42,6 +42,9 @@ class User extends Authenticatable
 
     public function roleLabel(): string
     {
-        return $this->isOwner() ? 'Owner' : 'Staff';
+        return match ($this->role) {
+            'owner' => 'Owner',
+            default => 'Staff',
+        };
     }
 }
